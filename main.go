@@ -60,6 +60,30 @@ func (ss *smokerServer) addSmokerHandler(w http.ResponseWriter, req *http.Reques
 	renderJSON(w, Response{Key: smoker.EmailAddress})
 }
 
+func (ss *smokerServer) registerSmokerHandler(w http.ResponseWriter, req *http.Request) {
+	log.Printf("handling registerSmoker at %s\n", req.URL.Path)
+
+	contentType := req.Header.Get("Content-Type")
+	mediatype, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if mediatype != "application/json" {
+		http.Error(w, "expect application/json Content-Type", http.StatusUnsupportedMediaType)
+		return
+	}
+	dec := json.NewDecoder(req.Body)
+	dec.DisallowUnknownFields()
+	var smoker Smoker
+	if err := dec.Decode(&smoker); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ss.store.RegisterSmoker(smoker.EmailAddress)
+	renderJSON(w, Response{Key: smoker.EmailAddress})
+}
+
 func (ss *smokerServer) getAllSmokersHandler(w http.ResponseWriter, req *http.Request) {
 	log.Printf("handling getAllSmokers at %s\n", req.URL.Path)
 
@@ -97,6 +121,7 @@ func main() {
 	server := NewSmokerServer()
 
 	router.HandleFunc("/api/smoker/", server.addSmokerHandler).Methods("POST")
+	router.HandleFunc("/api/register/", server.registerSmokerHandler).Methods("POST")
 	router.HandleFunc("/api/smoker/", server.getAllSmokersHandler).Methods("GET")
 	router.HandleFunc("/api/smoker/", server.deleteSmokerHandler).Methods("DELETE")
 	log.Fatal(http.ListenAndServe(":3000", router))

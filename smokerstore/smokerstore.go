@@ -30,6 +30,23 @@ func (ss *SmokerStore) AddSmoker(email_addr string) {
 	handle(err)
 }
 
+func (ss *SmokerStore) RegisterSmoker(email_addr string) {
+	opts := badger.DefaultOptions("/tmp/smokers")
+	opts.Logger = nil
+	db, err := badger.Open(opts)
+	handle(err)
+	defer db.Close()
+	err = db.View(func(txn *badger.Txn) error {
+		_, err := txn.Get([]byte(email_addr))
+		return err
+	})
+	if err != nil {
+		log.Printf("%s is ready for registration", email_addr)
+	} else {
+		log.Printf("%s has already registered", email_addr)
+	}
+}
+
 func (ss *SmokerStore) DeleteSmoker(email_addr string) {
 	opts := badger.DefaultOptions("/tmp/smokers")
 	opts.Logger = nil
