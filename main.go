@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"github.com/smokestopper/smokerstore"
+	"github.com/roundbyte/smokestopper/smokerstore"
 	"github.com/gorilla/mux"
 	"encoding/json"
 	"net/http"
