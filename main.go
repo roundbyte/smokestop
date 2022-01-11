@@ -10,7 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
-	"github.com/roundbyte/smokestopper/store"
+	"github.com/roundbyte/smokestop/store"
 )
 
 type smokeStopServer struct {
@@ -152,7 +152,7 @@ func main() {
 	router.HandleFunc("/api/register/", server.addUserHandler).Methods("POST")
 	router.HandleFunc("/api/checknewuser/", server.checkNewUser).Methods("GET")
 	router.HandleFunc("/api/user/", server.getAllUsersHandler).Methods("GET")
-	router.HandleFunc("/api/login/", server.loginUserHandler).Methods("GET")
+	router.HandleFunc("/api/login/", server.loginUserHandler).Methods("POST")
 	portString := fmt.Sprintf(":%s", os.Getenv("SERVERPORT"))
 	log.Fatal(http.ListenAndServe(portString, router))
 }
