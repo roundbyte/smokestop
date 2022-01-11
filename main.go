@@ -1,29 +1,43 @@
 package main
 
 import (
-	"log"
-	"github.com/roundbyte/smokestopper/smokerstore"
-	"github.com/gorilla/mux"
 	"encoding/json"
-	"net/http"
+	"log"
 	"mime"
+	"net/http"
+
+	"github.com/gorilla/mux"
+	"github.com/roundbyte/smokestopper/store"
 )
 
-type smokerServer struct {
-	store *smokerstore.SmokerStore
+type smokeStopServer struct {
+	store *store.Store
 }
 
-func NewSmokerServer() *smokerServer {
-	store := smokerstore.New()
-	return &smokerServer{store: store}
+func NewSmokerServer() *smokeStopServer {
+	store := store.New()
+	return &smokeStopServer{store: store}
 }
 
-type Smoker struct {
-	EmailAddress string `json:"email_addr"`
+type UserRegistration struct {
+	EmailAddr string `json:"emailAddr"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+}
+
+type UserRegistrationErrors struct {
+	EmailAddr string `json:"emailAddr"`
+	Username  string `json:"username"`
+}
+
+type UserLogin struct {
+	EmailAddr string `json:"emailAddr"`
+	Password  string `json:"password"`
 }
 
 type Response struct {
-	Key string `json:"key"`
+	Key   string `json:"key"`
+	Error bool   `json:"error"`
 }
 
 func renderJSON(w http.ResponseWriter, v interface{}) {
@@ -36,7 +50,7 @@ func renderJSON(w http.ResponseWriter, v interface{}) {
 	w.Write(js)
 }
 
-func (ss *smokerServer) addSmokerHandler(w http.ResponseWriter, req *http.Request) {
+func (server *smokeStopServer) addUserHandler(w http.ResponseWriter, req *http.Request) {
 	log.Printf("handling addSmoker at %s\n", req.URL.Path)
 
 	contentType := req.Header.Get("Content-Type")
@@ -51,17 +65,17 @@ func (ss *smokerServer) addSmokerHandler(w http.ResponseWriter, req *http.Reques
 	}
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
-	var smoker Smoker
-	if err := dec.Decode(&smoker); err != nil {
+	var userRegistration UserRegistration
+	if err := dec.Decode(&userRegistration); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ss.store.AddSmoker(smoker.EmailAddress)
-	renderJSON(w, Response{Key: smoker.EmailAddress})
+	server.store.AddUser(userRegistration.EmailAddr, userRegistration.Username, userRegistration.Password)
+	renderJSON(w, Response{Key: userRegistration.EmailAddr, Error: false})
 }
 
-func (ss *smokerServer) registerSmokerHandler(w http.ResponseWriter, req *http.Request) {
-	log.Printf("handling registerSmoker at %s\n", req.URL.Path)
+func (server *smokeStopServer) checkNewUser(w http.ResponseWriter, req *http.Request) {
+	log.Printf("handling checkNewUser at %s\n", req.URL.Path)
 
 	contentType := req.Header.Get("Content-Type")
 	mediatype, _, err := mime.ParseMediaType(contentType)
@@ -75,24 +89,35 @@ func (ss *smokerServer) registerSmokerHandler(w http.ResponseWriter, req *http.R
 	}
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
-	var smoker Smoker
-	if err := dec.Decode(&smoker); err != nil {
+	var userRegistration UserRegistration
+	if err := dec.Decode(&userRegistration); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ss.store.RegisterSmoker(smoker.EmailAddress)
-	renderJSON(w, Response{Key: smoker.EmailAddress})
+
+	userRegistrationErrors := UserRegistrationErrors{EmailAddr: "", Username: ""}
+	server.store.GetAllUsers()
+	if value, exists := server.store.Users[userRegistration.EmailAddr]; exists {
+		log.Printf("%s exists already for %s\n", userRegistration.EmailAddr, value.Username)
+		userRegistrationErrors.EmailAddr = "Email address already exists 👻"
+	}
+	// key, user
+	for _, user := range server.store.Users {
+		if user.Username == userRegistration.Username {
+			userRegistrationErrors.Username = "Username has already been taken 👻"
+		}
+	}
+	renderJSON(w, userRegistrationErrors)
 }
 
-func (ss *smokerServer) getAllSmokersHandler(w http.ResponseWriter, req *http.Request) {
+func (server *smokeStopServer) getAllUsersHandler(w http.ResponseWriter, req *http.Request) {
 	log.Printf("handling getAllSmokers at %s\n", req.URL.Path)
-
-	ss.store.GetSmokers()
-	renderJSON(w, ss.store.Smokers)
+	server.store.GetAllUsers()
+	renderJSON(w, server.store.Users)
 }
 
-func (ss *smokerServer) deleteSmokerHandler(w http.ResponseWriter, req *http.Request) {
-	log.Printf("handling deleteSmoker at %s\n", req.URL.Path)
+func (server *smokeStopServer) loginUserHandler(w http.ResponseWriter, req *http.Request) {
+	log.Printf("handling loginUser at %s\n", req.URL.Path)
 
 	contentType := req.Header.Get("Content-Type")
 	mediatype, _, err := mime.ParseMediaType(contentType)
@@ -106,13 +131,13 @@ func (ss *smokerServer) deleteSmokerHandler(w http.ResponseWriter, req *http.Req
 	}
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
-	var smoker Smoker
-	if err := dec.Decode(&smoker); err != nil {
+	var userLogin UserLogin
+	if err := dec.Decode(&userLogin); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ss.store.DeleteSmoker(smoker.EmailAddress)
-	renderJSON(w, Response{Key: smoker.EmailAddress})
+	passwordsMatch := server.store.CheckUserPassword(userLogin.EmailAddr, userLogin.Password)
+	renderJSON(w, Response{Key: userLogin.EmailAddr, Error: !passwordsMatch})
 }
 
 func main() {
@@ -120,9 +145,9 @@ func main() {
 	//router.StrictSlash(true)
 	server := NewSmokerServer()
 
-	router.HandleFunc("/api/smoker/", server.addSmokerHandler).Methods("POST")
-	router.HandleFunc("/api/register/", server.registerSmokerHandler).Methods("POST")
-	router.HandleFunc("/api/smoker/", server.getAllSmokersHandler).Methods("GET")
-	router.HandleFunc("/api/smoker/", server.deleteSmokerHandler).Methods("DELETE")
+	router.HandleFunc("/api/register/", server.addUserHandler).Methods("POST")
+	router.HandleFunc("/api/checknewuser/", server.checkNewUser).Methods("GET")
+	router.HandleFunc("/api/user/", server.getAllUsersHandler).Methods("GET")
+	router.HandleFunc("/api/login/", server.loginUserHandler).Methods("GET")
 	log.Fatal(http.ListenAndServe(":3000", router))
 }
