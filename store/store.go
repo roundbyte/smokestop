@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/gob"
+	"os"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
@@ -27,7 +28,7 @@ func New() *Store {
 }
 
 func (store *Store) AddUser(emailAddr string, username string, password string) {
-	opts := badger.DefaultOptions("C:/Users/Jakob/roundbyte/smokers")
+	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
 	db, err := badger.Open(opts)
 	handle(err)
@@ -48,7 +49,7 @@ func (store *Store) AddUser(emailAddr string, username string, password string) 
 }
 
 func (store *Store) CheckUserPassword(emailAddr string, password string) bool {
-	opts := badger.DefaultOptions("C:/Users/Jakob/roundbyte/smokers")
+	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
 	db, err := badger.Open(opts)
 	handle(err)
@@ -74,7 +75,7 @@ func (store *Store) CheckUserPassword(emailAddr string, password string) bool {
 }
 
 func (s *Store) GetAllUsers() {
-	opts := badger.DefaultOptions("C:/Users/Jakob/roundbyte/smokers")
+	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
 	db, err := badger.Open(opts)
 	handle(err)

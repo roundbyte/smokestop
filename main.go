@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"mime"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"github.com/roundbyte/smokestopper/store"
 )
 
@@ -141,6 +144,7 @@ func (server *smokeStopServer) loginUserHandler(w http.ResponseWriter, req *http
 }
 
 func main() {
+	godotenv.Load()
 	router := mux.NewRouter()
 	//router.StrictSlash(true)
 	server := NewSmokerServer()
@@ -149,5 +153,6 @@ func main() {
 	router.HandleFunc("/api/checknewuser/", server.checkNewUser).Methods("GET")
 	router.HandleFunc("/api/user/", server.getAllUsersHandler).Methods("GET")
 	router.HandleFunc("/api/login/", server.loginUserHandler).Methods("GET")
-	log.Fatal(http.ListenAndServe(":3000", router))
+	portString := fmt.Sprintf(":%s", os.Getenv("SERVERPORT"))
+	log.Fatal(http.ListenAndServe(portString, router))
 }
