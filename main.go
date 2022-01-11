@@ -150,7 +150,7 @@ func main() {
 	server := NewSmokerServer()
 
 	router.HandleFunc("/api/register/", server.addUserHandler).Methods("POST")
-	router.HandleFunc("/api/checknewuser/", server.checkNewUser).Methods("GET")
+	router.HandleFunc("/api/checknewuser/", server.checkNewUser).Methods("POST")
 	router.HandleFunc("/api/user/", server.getAllUsersHandler).Methods("GET")
 	router.HandleFunc("/api/login/", server.loginUserHandler).Methods("POST")
 	portString := fmt.Sprintf(":%s", os.Getenv("SERVERPORT"))
