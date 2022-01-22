@@ -6,12 +6,15 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"os"
 
+	"github.com/gorilla/sessions"
 	"github.com/roundbyte/smokestop/store"
 )
 
 type Server struct {
-	store *store.Store
+	store       *store.Store
+	cookieStore *sessions.CookieStore
 }
 type UserRegistration struct {
 	EmailAddr string `json:"emailAddr"`
@@ -27,13 +30,14 @@ type UserLogin struct {
 	Password  string `json:"password"`
 }
 type Response struct {
-	Key   string `json:"key"`
+	Data  string `json:"data"`
 	Error bool   `json:"error"`
 }
 
-func NewServer() *Server {
+func New() *Server {
 	store := store.New()
-	return &Server{store: store}
+	cookieStore := sessions.NewCookieStore([]byte(os.Getenv("SECRETKEY")))
+	return &Server{store: store, cookieStore: cookieStore}
 }
 
 func (server *Server) RegisterUserHandler(w http.ResponseWriter, req *http.Request) {
@@ -48,7 +52,7 @@ func (server *Server) RegisterUserHandler(w http.ResponseWriter, req *http.Reque
 		return
 	}
 	server.store.AddUser(ur.EmailAddr, ur.Username, ur.Password)
-	response := Response{Key: ur.EmailAddr, Error: false}
+	response := Response{Data: "Successfully registered " + ur.EmailAddr, Error: false}
 	renderJSON(w, response)
 }
 
@@ -83,6 +87,14 @@ func (server *Server) GetAllUsersHandler(w http.ResponseWriter, req *http.Reques
 	renderJSON(w, server.store.Users)
 }
 
+func (server *Server) SecretHandler(w http.ResponseWriter, req *http.Request) {
+	server.store.GetAllUsers()
+	session, _ := server.cookieStore.Get(req, "session-name")
+	log.Printf("emailAddr: %s, authenticated: %d", session.Values["emailAddr"], session.Values["authenticated"])
+	session.Save(req, w)
+	renderJSON(w, server.store.Users)
+}
+
 func (server *Server) LoginUserHandler(w http.ResponseWriter, req *http.Request) {
 	if err := parseBodyJSON(w, req); err != nil {
 		return
@@ -96,7 +108,21 @@ func (server *Server) LoginUserHandler(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	passwordsMatch := server.store.CheckUserPassword(ul.EmailAddr, ul.Password)
-	response := Response{Key: ul.EmailAddr, Error: !passwordsMatch}
+	if passwordsMatch {
+		session, _ := server.cookieStore.Get(req, "session-name")
+		session.Values["emailAddr"] = ul.EmailAddr
+		session.Values["authenticated"] = true
+		session.Save(req, w)
+	}
+	response := Response{Data: ul.EmailAddr, Error: !passwordsMatch}
+	renderJSON(w, response)
+}
+
+func (server *Server) LogoutUserHandler(w http.ResponseWriter, req *http.Request) {
+	session, _ := server.cookieStore.Get(req, "session-name")
+	session.Options.MaxAge = -1
+	session.Save(req, w)
+	response := Response{Data: "Logged out", Error: false}
 	renderJSON(w, response)
 }
 
@@ -117,7 +143,7 @@ func parseBodyJSON(w http.ResponseWriter, req *http.Request) error {
 		return errors.New("StatusBadRequest")
 	} else if mediatype != "application/json" {
 		http.Error(w, "expect application/json Content-Type", http.StatusUnsupportedMediaType)
-		return errors.New("expect application/json Content-Type")
+		return errors.New("StatusUnsupportedMediaType")
 	}
 	return nil
 }
