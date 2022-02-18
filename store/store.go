@@ -3,14 +3,17 @@ package store
 import (
 	"bytes"
 	"encoding/gob"
+	"log"
 	"os"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
+	guuid "github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
+	EmailAddr string
 	Username  string
 	Password  []byte
 	Active    bool
@@ -27,81 +30,114 @@ func New() *Store {
 	return store
 }
 
-func (store *Store) AddUser(emailAddr string, username string, password string) {
+func (store *Store) RegisterUser(emailAddr string, username string, password string) (string, error) {
+	var err error
+	var db *badger.DB
+
 	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
-	db, err := badger.Open(opts)
-	handle(err)
+	db, err = badger.Open(opts)
+	if err != nil {
+		return "", err
+	}
 	defer db.Close()
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 8)
-	userEncode := User{Username: username, Password: hashedPassword, Active: true, StoppedAt: time.Now()}
-	var b bytes.Buffer
-	e := gob.NewEncoder(&b)
-	if err = e.Encode(userEncode); err != nil {
-		panic(err)
+	if err != nil {
+		return "", err
 	}
+	userEncode := User{
+		EmailAddr: emailAddr,
+		Username:  username,
+		Password:  hashedPassword,
+		Active:    true,
+		StoppedAt: time.Now(),
+	}
+
+	var byteEncodedUser bytes.Buffer
+	encoder := gob.NewEncoder(&byteEncodedUser)
+	err = encoder.Encode(userEncode)
+	if err != nil {
+		return "", err
+	}
+	var id string
 	err = db.Update(func(txn *badger.Txn) error {
-		err := txn.Set([]byte(emailAddr), b.Bytes())
-		return err
+		id = guuid.NewString()
+		return txn.Set([]byte(id), byteEncodedUser.Bytes())
 	})
-	handle(err)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
-func (store *Store) CheckUserPassword(emailAddr string, password string) bool {
+func (store *Store) DoesPasswordMatch(userId string, password string) error {
+	var err error
+	var db *badger.DB
+
 	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
-	db, err := badger.Open(opts)
-	handle(err)
+	db, err = badger.Open(opts)
+	if err != nil {
+		return err
+	}
 	defer db.Close()
 
-	err = db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(emailAddr))
-		handle(err)
+	return db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(userId))
+		if err != nil {
+			return err
+		}
 		val, err := item.ValueCopy(nil)
-		var userDecode User
+		var decodedUser User
 		d := gob.NewDecoder(bytes.NewReader(val))
-		err = d.Decode(&userDecode)
-		handle(err)
-		if err = bcrypt.CompareHashAndPassword(userDecode.Password, []byte(password)); err != nil {
+		err = d.Decode(&decodedUser)
+		if err != nil {
+			return err
+		}
+		if err = bcrypt.CompareHashAndPassword(decodedUser.Password, []byte(password)); err != nil {
 			return err
 		}
 		return nil
 	})
-	if err != nil {
-		return false
-	}
-	return true
 }
 
-func (s *Store) GetAllUsers() {
+func (store *Store) GetAllUsers() error {
+	var err error
+	var db *badger.DB
+
 	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
-	db, err := badger.Open(opts)
-	handle(err)
+	db, err = badger.Open(opts)
+	if err != nil {
+		return err
+	}
 	defer db.Close()
 
-	err = db.View(func(txn *badger.Txn) error {
+	return db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 10
 		it := txn.NewIterator(opts)
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
 			key := item.Key()
+			log.Println(string(key))
 			err := item.Value(func(val []byte) error {
-				var userDecode User
+				var decodedUser User
 				d := gob.NewDecoder(bytes.NewReader(val))
-				err := d.Decode(&userDecode)
-				handle(err)
-				s.Users[string(key)] = userDecode
+				err := d.Decode(&decodedUser)
+				if err != nil {
+					return err
+				}
+				store.Users[string(key)] = decodedUser
 				return nil
 			})
-			handle(err)
+			if err != nil {
+				log.Println("Error with an entry")
+			}
 		}
 		return nil
 	})
-	handle(err)
 }
 
 func handle(e error) {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -17,15 +16,14 @@ func main() {
 	router := mux.NewRouter()
 	server := server.New()
 
-	router.HandleFunc("/api/register/", server.RegisterUserHandler).Methods("POST")
-	router.HandleFunc("/api/checknewuser/", server.CheckNewUserHandler).Methods("POST")
-	router.HandleFunc("/api/user/", server.GetAllUsersHandler).Methods("GET")
-	router.HandleFunc("/api/login/", server.LoginUserHandler).Methods("POST")
+	router.HandleFunc("/api/users/", server.GetAllUsers).Methods("GET")
+	router.HandleFunc("/api/users/register/", server.RegisterUser).Methods("POST")
+	router.HandleFunc("/api/users/login/", server.LoginUserHandler).Methods("POST")
+	router.HandleFunc("/api/users/logout/", server.LogoutUserHandler).Methods("POST")
+	router.HandleFunc("/api/users/check/", server.CheckNewUserHandler).Methods("POST")
 	router.HandleFunc("/api/secret/", server.SecretHandler).Methods("GET")
-	router.HandleFunc("/api/logout/", server.LogoutUserHandler).Methods("POST")
 
 	handler := middleware.Logging(router)
 
-	portString := fmt.Sprintf(":%s", os.Getenv("SERVERPORT"))
-	log.Fatal(http.ListenAndServe(portString, handler))
+	log.Fatal(http.ListenAndServe(":"+os.Getenv("SERVERPORT"), handler))
 }
