@@ -2,7 +2,7 @@
 
 A simple web application designed to help anyone, including me, in the quest to stop smoking. At the same time I consider this an exercise for some web server programming.
 
-## Step 1 - User Registration (ongoing)
+## Step 1 - User Registration (done)
 
 -   Registration form:
     -   Email Address
@@ -11,7 +11,7 @@ A simple web application designed to help anyone, including me, in the quest to 
 -   It will be required to verify the email address.
 -   After verification, login can proceed, and makes use of a login cookie.
 
-## Step 2 - Design the application
+## Step 2 - Design the application (in progress)
 A big button in the middle of the screen that saved the current timestamp and defines the moment you stopped smoking.
 Periodically you will receive updates about how long it has been since you stopped smoking and and especially what the benefits on your health are.
 
