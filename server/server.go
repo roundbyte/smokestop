@@ -28,152 +28,239 @@ type Response struct {
 	Err  bool   `json:"err"`
 }
 
-// User Resistration
-
-type UserRegistration struct {
-	EmailAddr string `json:"emailAddr"`
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-}
+// Step 1. User Registration
 
 func (server *Server) RegisterUser(w http.ResponseWriter, req *http.Request) {
+	// Decode the JSON body
 	if err := parseBodyJSON(w, req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
-	var ur UserRegistration
-	if err := dec.Decode(&ur); err != nil {
+
+	// Decode to the User Registration Form to a go struct
+	var userRegistrationForm store.UserRegistrationForm
+	if err := dec.Decode(&userRegistrationForm); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_, err := server.checkUserRegistration(ur)
+
+	// Update the store
+	if err := server.updateStore(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Check the email address
+	if err := server.checkEmailAddressAvailable(userRegistrationForm.EmailAddr); err != nil {
+		response := Response{Data: err.Error(), Err: true}
+		renderJSON(w, response)
+		return
+	}
+
+	// Check the username
+	if err := server.checkUsernameAvailable(userRegistrationForm.Username); err != nil {
+		response := Response{Data: err.Error(), Err: true}
+		renderJSON(w, response)
+		return
+	}
+
+	// Check the password
+	if err := server.checkPassword(userRegistrationForm.Password); err != nil {
+		response := Response{Data: err.Error(), Err: true}
+		renderJSON(w, response)
+		return
+	}
+
+	id, err := server.store.RegisterUser(userRegistrationForm)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	id, err := server.store.RegisterUser(ur.EmailAddr, ur.Username, ur.Password)
-	var response Response
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	response = Response{
+	response := Response{
 		Data: id,
 		Err:  false,
 	}
 	renderJSON(w, response)
 }
 
-type UserRegistrationErrors struct {
-	EmailAddrErr string `json:"emailAddrErr"`
-	UsernameErr  string `json:"usernameErr"`
-}
-
-// Check new user credentials
-
-func (server *Server) CheckNewUserHandler(w http.ResponseWriter, req *http.Request) {
-	if err := parseBodyJSON(w, req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	dec := json.NewDecoder(req.Body)
-	dec.DisallowUnknownFields()
-	var ur UserRegistration
-	if err := dec.Decode(&ur); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ure, _ := server.checkUserRegistration(ur)
-	renderJSON(w, ure)
-}
-
-func (server *Server) checkUserRegistration(ur UserRegistration) (UserRegistrationErrors, error) {
-	ure := UserRegistrationErrors{EmailAddrErr: "", UsernameErr: ""}
-	var err error = nil
-	if err := server.store.GetAllUsers(); err != nil {
-		log.Printf("Unable to store.GetAllUsers %s\n", err.Error())
-	}
+func (server *Server) checkEmailAddressAvailable(emailAddr string) error {
 	for _, user := range server.store.Users {
-		if user.EmailAddr == ur.EmailAddr {
-			ure.EmailAddrErr = "Email address has already in use 👻"
-			err = errors.New("Email address already in use 🚫")
-		}
-		if user.Username == ur.Username {
-			ure.UsernameErr = "Username has already in use 👻"
-			err = errors.New("Username has already in use 🚫")
+		if user.EmailAddr == emailAddr {
+			if user.Active {
+				return errors.New("errEmailAddressAlreadyActive")
+			} else {
+				return errors.New("errEmailAddressNotConfirmed")
+			}
 		}
 	}
-	return ure, err
+	return nil
 }
 
-func (server *Server) GetAllUsers(w http.ResponseWriter, req *http.Request) {
+func (server *Server) checkUsernameAvailable(username string) error {
+	for _, user := range server.store.Users {
+		if user.Username == username {
+			return errors.New("errUsernameExists")
+		}
+	}
+	return nil
+}
+
+func (server *Server) checkPassword(password string) error {
+	log.Printf("Password is: %s\n", password)
+	return nil
+}
+
+func (server *Server) updateStore() error {
 	if err := server.store.GetAllUsers(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (server *Server) GetUsers(w http.ResponseWriter, req *http.Request) {
+	if err := server.updateStore(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	renderJSON(w, server.store.Users)
 }
 
-type UserLogin struct {
-	EmailAddr string `json:"emailAddr"`
-	Password  string `json:"password"`
+type UserLoginForm struct {
+	UsernameOrEmailAddr string `json:"usernameOrEmailAddr"`
+	Password            string `json:"password"`
 }
 
 func (server *Server) LoginUserHandler(w http.ResponseWriter, req *http.Request) {
+	// Decode the JSON body
 	if err := parseBodyJSON(w, req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
 
-	var ul UserLogin
-	if err := dec.Decode(&ul); err != nil {
+	// Decode to the User Login Form to a go struct
+	var userLoginForm UserLoginForm
+	if err := dec.Decode(&userLoginForm); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := server.store.GetAllUsers(); err != nil {
+
+	// Update the store
+	if err := server.updateStore(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	var userId string = ""
-	var response Response
-	for key, user := range server.store.Users {
-		log.Println(key)
-		if user.EmailAddr == ul.EmailAddr {
-			userId = key
-		}
-	}
-	if userId == "" {
-		response = Response{Data: "Non existent user", Err: true}
+
+	// Find user id if the email address or username exist
+	userId, err := server.findUserIdByUsernameOrEmailAddress(userLoginForm.UsernameOrEmailAddr)
+	if err != nil {
+		response := Response{Data: err.Error(), Err: true}
 		renderJSON(w, response)
 		return
 	}
 
-	err := server.store.DoesPasswordMatch(userId, ul.Password)
-	if err != nil {
-		response = Response{Data: err.Error(), Err: true}
-	} else {
-		session, _ := server.cookieStore.Get(req, "session-name")
-		session.Values["userId"] = userId
-		session.Values["authenticated"] = true
-		session.Save(req, w)
-		response = Response{Data: "Logged in, set cookie", Err: false}
+	// Check the password
+	if err = server.store.CheckPassword(userId, userLoginForm.Password); err != nil {
+		response := Response{Data: err.Error(), Err: true}
+		renderJSON(w, response)
+		return
 	}
+
+	// Set the authentication cookie
+	session, _ := server.cookieStore.Get(req, "authentication")
+	session.Values["userId"] = userId
+	session.Values["authenticated"] = true
+	session.Save(req, w)
+
+	// Send the response
+	response := Response{Data: "logInSuccessfulCookieSet", Err: false}
 	renderJSON(w, response)
 }
 
+func (server *Server) findUserIdByUsernameOrEmailAddress(usernameOrEmailAddr string) (string, error) {
+	for key, user := range server.store.Users {
+		if user.Username == usernameOrEmailAddr || user.EmailAddr == usernameOrEmailAddr {
+			if user.Active == false {
+				return "", errors.New("errEmailAddressNotConfirmed")
+			}
+			return key, nil
+		}
+	}
+	return "", errors.New("errUsernameOrEmailAddressNotFound")
+}
+
 func (server *Server) LogoutUserHandler(w http.ResponseWriter, req *http.Request) {
-	session, _ := server.cookieStore.Get(req, "session-name")
+	session, _ := server.cookieStore.Get(req, "auth-session")
 	session.Options.MaxAge = -1
 	session.Save(req, w)
-	response := Response{Data: "Logged out", Err: false}
+	response := Response{Data: "logOutSuccessful", Err: false}
 	renderJSON(w, response)
+}
+
+type UserVerifyForm struct {
+	EmailAddr string `json:"emailAddr"`
+	Code      string `json:"code"`
+}
+
+func (server *Server) VerifyUserHandler(w http.ResponseWriter, req *http.Request) {
+	// Decode the JSON body
+	if err := parseBodyJSON(w, req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	dec := json.NewDecoder(req.Body)
+	dec.DisallowUnknownFields()
+
+	// Decode to the User Registration Form to a go struct
+	var userVerifyForm UserVerifyForm
+	if err := dec.Decode(&userVerifyForm); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Update the store
+	if err := server.updateStore(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Find user id if the email address or username exist
+	userId, err := server.isEmailAddressUnverified(userVerifyForm.EmailAddr)
+	if err != nil {
+		response := Response{Data: err.Error(), Err: true}
+		renderJSON(w, response)
+		return
+	}
+
+	// Verify the user
+	if err = server.store.VerifyUser(userId, userVerifyForm.Code); err != nil {
+		response := Response{Data: err.Error(), Err: true}
+		renderJSON(w, response)
+		return
+	}
+
+	// Send the response
+	response := Response{Data: "verificationSuccessful", Err: false}
+	renderJSON(w, response)
+}
+
+func (server *Server) isEmailAddressUnverified(emailAddr string) (string, error) {
+	for key, user := range server.store.Users {
+		if user.EmailAddr == emailAddr {
+			if user.Active == true {
+				return "", errors.New("errEmailAddressAlreadyActive")
+			}
+			return key, nil
+		}
+	}
+	return "", errors.New("errEmailAddressNotFound")
 }
 
 func (server *Server) SecretHandler(w http.ResponseWriter, req *http.Request) {
 	server.store.GetAllUsers()
-	session, err := server.cookieStore.Get(req, "session-name")
+	session, err := server.cookieStore.Get(req, "auth-session")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return

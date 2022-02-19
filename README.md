@@ -1,16 +1,34 @@
 # Smokestopper
 
-A simple web application designed to help anyone stop smoking
-The application is structured as follows and open source:
+A simple web application designed to help anyone, including me, in the quest to stop smoking. At the same time I consider this an exercise for some web server programming.
 
-- Svelte frontend
-- Go backend
-- Writes to a badger Database
-- Uses jwt to active accounts
+## Step 1 - User Registration (ongoing)
 
-The idea is simple, you enter your email address and click a url to verify that it is your email address.
-As soon as it is verified, the time is saved in the database and it defines the moment you stopped smoking.
-Periodically you will receive updates about how long it has been since you stopped smoking and what the benefits on your health are.
+-   Registration form:
+    -   Email Address
+    -   Username
+    -   Password
+-   It will be required to verify the email address.
+-   After verification, login can proceed, and makes use of a login cookie.
 
-I was also thinking of creating a leaderboard of some sort, and defining a moment where, according to the application, you can be defined a non smoker.
-Furthermore, I would like to implement forum based interaction between users, for when one would like to share a story, or a word of advice to help others to stop smoking.
+## Step 2 - Design the application
+A big button in the middle of the screen that saved the current timestamp and defines the moment you stopped smoking.
+Periodically you will receive updates about how long it has been since you stopped smoking and and especially what the benefits on your health are.
+
+## Step 3 - Brainstorm
+- Add a leaderboard of some sort.
+- Add forum based interaction between users, for when one would like to share a story, or a word of advice to help others stop smoking.
+
+You might find this soon at jakobthesheep.com
+
+## Technology
+
+- Backend written in Go
+- BadgerDB for the database choice
+- Svelte will be used for frontend
+
+You must create a .env file should you want to test this, containing:
+SERVERPORT= on which port to listen
+DBPATH= path to a folder of choice which will become the DB
+SECRETKEY=for the cookie store
+MAILPSW=needed by the mailer to relay mail through gmail

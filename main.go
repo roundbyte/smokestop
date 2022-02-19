@@ -16,12 +16,11 @@ func main() {
 	router := mux.NewRouter()
 	server := server.New()
 
-	router.HandleFunc("/api/users/", server.GetAllUsers).Methods("GET")
-	router.HandleFunc("/api/users/register/", server.RegisterUser).Methods("POST")
-	router.HandleFunc("/api/users/login/", server.LoginUserHandler).Methods("POST")
-	router.HandleFunc("/api/users/logout/", server.LogoutUserHandler).Methods("POST")
-	router.HandleFunc("/api/users/check/", server.CheckNewUserHandler).Methods("POST")
-	router.HandleFunc("/api/secret/", server.SecretHandler).Methods("GET")
+	router.HandleFunc("/api/users/", server.GetUsers).Methods("GET")
+	router.HandleFunc("/api/register/", server.RegisterUser).Methods("POST")
+	router.HandleFunc("/api/login/", server.LoginUserHandler).Methods("POST")
+	router.HandleFunc("/api/logout/", server.LogoutUserHandler).Methods("POST")
+	router.HandleFunc("/api/verify/", server.VerifyUserHandler).Methods("POST")
 
 	handler := middleware.Logging(router)
 

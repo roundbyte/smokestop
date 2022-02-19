@@ -3,21 +3,25 @@ package store
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"log"
+	"math/rand"
 	"os"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
 	guuid "github.com/google/uuid"
+	mailer "github.com/roundbyte/smokestop/mailer"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
-	EmailAddr string
-	Username  string
-	Password  []byte
-	Active    bool
-	StoppedAt time.Time
+	EmailAddr      string
+	Username       string
+	Password       []byte
+	Active         bool
+	ActivationCode string
+	StoppedAt      time.Time
 }
 
 type Store struct {
@@ -30,28 +34,36 @@ func New() *Store {
 	return store
 }
 
-func (store *Store) RegisterUser(emailAddr string, username string, password string) (string, error) {
-	var err error
-	var db *badger.DB
-
+func dbConnect() (*badger.DB, error) {
 	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
 	opts.Logger = nil
-	db, err = badger.Open(opts)
+	return badger.Open(opts)
+}
+
+type UserRegistrationForm struct {
+	EmailAddr string `json:"emailAddr"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+}
+
+func (store *Store) RegisterUser(userRegistrationForm UserRegistrationForm) (string, error) {
+	db, err := dbConnect()
 	if err != nil {
 		return "", err
 	}
 	defer db.Close()
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(userRegistrationForm.Password), 8)
 	if err != nil {
 		return "", err
 	}
 	userEncode := User{
-		EmailAddr: emailAddr,
-		Username:  username,
-		Password:  hashedPassword,
-		Active:    true,
-		StoppedAt: time.Now(),
+		EmailAddr:      userRegistrationForm.EmailAddr,
+		Username:       userRegistrationForm.Username,
+		Password:       hashedPassword,
+		Active:         false,
+		ActivationCode: randSeq(10),
+		StoppedAt:      time.Now(),
 	}
 
 	var byteEncodedUser bytes.Buffer
@@ -68,16 +80,13 @@ func (store *Store) RegisterUser(emailAddr string, username string, password str
 	if err != nil {
 		return "", err
 	}
+
+	mailer.SendEmail(userEncode.Username, userEncode.EmailAddr, userEncode.ActivationCode)
 	return id, nil
 }
 
-func (store *Store) DoesPasswordMatch(userId string, password string) error {
-	var err error
-	var db *badger.DB
-
-	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
-	opts.Logger = nil
-	db, err = badger.Open(opts)
+func (store *Store) CheckPassword(userId string, password string) error {
+	db, err := dbConnect()
 	if err != nil {
 		return err
 	}
@@ -96,6 +105,42 @@ func (store *Store) DoesPasswordMatch(userId string, password string) error {
 			return err
 		}
 		if err = bcrypt.CompareHashAndPassword(decodedUser.Password, []byte(password)); err != nil {
+			return errors.New("errPasswordMismatch")
+		}
+		return nil
+	})
+}
+
+func (store *Store) VerifyUser(userId string, code string) error {
+	db, err := dbConnect()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	return db.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(userId))
+		if err != nil {
+			return err
+		}
+		val, err := item.ValueCopy(nil)
+		var decodedUser User
+		d := gob.NewDecoder(bytes.NewReader(val))
+		err = d.Decode(&decodedUser)
+		if err != nil {
+			return err
+		}
+		if match := (decodedUser.ActivationCode == code); match == false {
+			return errors.New("errInvalidCode")
+		}
+		decodedUser.Active = true
+		decodedUser.ActivationCode = "isAlreadyActive"
+		var byteEncodedUser bytes.Buffer
+		encoder := gob.NewEncoder(&byteEncodedUser)
+		if err := encoder.Encode(decodedUser); err != nil {
+			return err
+		}
+		if err := txn.Set([]byte(userId), byteEncodedUser.Bytes()); err != nil {
 			return err
 		}
 		return nil
@@ -103,12 +148,7 @@ func (store *Store) DoesPasswordMatch(userId string, password string) error {
 }
 
 func (store *Store) GetAllUsers() error {
-	var err error
-	var db *badger.DB
-
-	opts := badger.DefaultOptions(os.Getenv("DBPATH"))
-	opts.Logger = nil
-	db, err = badger.Open(opts)
+	db, err := dbConnect()
 	if err != nil {
 		return err
 	}
@@ -140,8 +180,13 @@ func (store *Store) GetAllUsers() error {
 	})
 }
 
-func handle(e error) {
-	if e != nil {
-		panic(e)
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randSeq(n int) string {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
 	}
+	return string(b)
 }
